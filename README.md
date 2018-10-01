@@ -1,4 +1,8 @@
 # Cloud Computing Assignment 1
+Made by **Svein Are Danielsen**
+
+Studentno.: **253067** 
+
 
 ## URL
 <https://eco-byte-216121.appspot.com/igcinfo/>
