@@ -6,13 +6,11 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/marni/goigc"
 	"google.golang.org/appengine"
-	"log"
 	"math"
 	"net/http"
 	"strconv"
 	"time"
 )
-
 
 type IGCType struct {
 	HDate       string 	`json:"H_date,omitempty"`
@@ -39,8 +37,7 @@ type APIInfo struct {
 }
 
 var startTime = time.Now()
-var igcArray []IGCArray
-var igcs []IGCType
+var igcData []IGCArray
 var lastId int
 var apiInfo APIInfo
 
@@ -77,12 +74,22 @@ func Distance(lat1, lon1, lat2, lon2 float64) float64 {
 	Response: 		JSON object
  */
 func GetAPI(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
+	// Get uptime
+	t, err := time.Parse(time.RFC3339, startTime.UTC().Format(time.RFC3339))
 
-	t, _ := time.Parse(time.RFC3339, startTime.UTC().Format(time.RFC3339))
-	apiInfo.Uptime = t.String()
+	if err == nil {
+		// Set header content-type
+		w.Header().Set("Content-Type", "application/json")
 
-	json.NewEncoder(w).Encode(apiInfo)
+		// Set uptime
+		apiInfo.Uptime = t.String()
+
+		// Display JSON-data
+		json.NewEncoder(w).Encode(apiInfo)
+	} else {
+		// Display error message
+		http.Error(w, err.Error(), http.StatusNotFound)
+	}
 }
 
 /*	GET /api/igc
@@ -91,15 +98,24 @@ func GetAPI(w http.ResponseWriter, r *http.Request) {
 	Response:		JSON array
  */
 func GetIGC(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
+	// Check if we have data
+	if len(igcData) > 0 {
+		// Set header content-type
+		w.Header().Set("Content-Type", "application/json")
 
-	var arr []int
-	
-	for _, item := range igcArray {
-		arr = append(arr, item.Id)
+		// Declare int array
+		var result []int
+
+		// Loop through data and append it to array
+		for _, item := range igcData {
+			result = append(result, item.Id)
+		}
+
+		// Display JSON-data
+		json.NewEncoder(w).Encode(result)
+	} else {
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 	}
-	
-	json.NewEncoder(w).Encode(arr)
 }
 
 /*	POST /api/igc
@@ -108,46 +124,70 @@ func GetIGC(w http.ResponseWriter, r *http.Request) {
 	Response:		JSON object
  */
 func PostIGC(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "POST")
-	w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization")
-
 	url := r.FormValue("url")
 
+	// Check if field is not emplty
 	if url != "" {
+		// Get track-data from IGC-library
 		track, err := igc.ParseLocation(url)
 
+		// There was an error on getting track-data
 		if err != nil {
 			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		} else {
-			for _, item := range igcArray {
+			// Loop through current data
+			for _, item := range igcData {
+				// Check if data already has been saved
 				if item.Data.HDate == track.Date.String() {
+					w.Header().Set("Content-Type", "text/plain")
+
 					fmt.Fprintln(w, "Error: Data already exists")
 					http.Error(w, http.StatusText(http.StatusConflict), http.StatusConflict)
 					return
 				}
 			}
 
+			// Get all points from the track
 			points := track.Points
 
+			// Save first points
 			lastLat := points[0].Lat
 			lastLng := points[0].Lng
 
 			var trackLength float64
 
+			// Loop through all points
 			for i := 1; i < len(points); i++ {
+				// Add opp distance
 				trackLength += Distance(float64(lastLat), float64(lastLng), float64(points[i].Lat), float64(points[i].Lng))
+				// Save current point over previous points
 				lastLat = points[i].Lat
 				lastLng = points[i].Lng
 			}
 
+			// Set header content-type
+			w.Header().Set("Content-Type", "application/json")
+
+			// Increment lsat ID
 			lastId++
-			igcArray = append(igcArray, IGCArray{lastId, url, IGCType{track.Date.String(), track.Pilot, track.GliderType, track.GliderID, trackLength}})
-			json.NewEncoder(w).Encode(IGCPostDisplay{igcArray[lastId - 1].Id})
+			// Create data
+			igcData = append(igcData,
+				IGCArray{
+					lastId,
+					url,
+					IGCType{
+						track.Date.String(),
+						track.Pilot,
+						track.GliderType,
+						track.GliderID,
+						trackLength}})
+
+			// Display last ID inserted
+			json.NewEncoder(w).Encode(IGCPostDisplay{
+				igcData[lastId - 1].Id})
 		}
 	} else {
+		// Show 404 error
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 	}
 }
@@ -158,31 +198,38 @@ func PostIGC(w http.ResponseWriter, r *http.Request) {
 	Response: 		JSON object
  */
 func GetID(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
+	// Get parameters from the URL
 	params := mux.Vars(r)
+	// Parsing int from string
 	id, err := strconv.ParseInt(params["id"], 10, 64)
 
-	if err != nil {
-		log.Fatal(err.Error())
-		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
-		return
-	}
+	// No error in parsing int
+	if err == nil {
+		var found = false
+		var result IGCType
 
-	var found = false
-	var res IGCType
-
-	for _, item := range igcArray {
-		if id == int64(item.Id) {
-			found = true
-			res = item.Data
+		// Loop through data
+		for _, item := range igcData {
+			// Check if id exists and set data if so
+			if id == int64(item.Id) {
+				found = true
+				result = item.Data
+			}
 		}
-	}
 
-	if found {
-		json.NewEncoder(w).Encode(res)
+		if found {
+			// Set header content-type
+			w.Header().Set("Content-Type", "application/json")
+
+			// Display JSON-data
+			json.NewEncoder(w).Encode(result)
+		} else {
+			// Item is not found
+			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		}
 	} else {
-		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		// Display error in int parsing
+		http.Error(w, err.Error(), http.StatusNotFound)
 	}
 }
 
@@ -192,56 +239,66 @@ func GetID(w http.ResponseWriter, r *http.Request) {
 	Response: 		IGCType field
  */
 func GetIDField(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain")
-
+	// Get parameters
 	params := mux.Vars(r)
-	var res string
+	var result string
 
-	for _, item := range igcs {
-		if item.GliderId == params["id"] {
-
+	// Loop through data
+	for _, item := range igcData {
+		// Check if id exists
+		if item.Data.GliderId == params["id"] {
+			// Check if field exists
 			switch params["field"] {
 			case "h_date":
-				res = item.HDate
+				result = item.Data.HDate
 				break
 			case "pilot":
-				res = item.Pilot
+				result = item.Data.Pilot
 				break
 			case "glider":
-				res = item.Glider
+				result = item.Data.Glider
 				break
 			case "glider_id":
-				res = item.GliderId
+				result = item.Data.GliderId
 				break
 			case "track_length":
-				res = fmt.Sprintf("%f", item.TrackLength)
+				result = fmt.Sprintf("%f", item.Data.TrackLength)
 				break
 			default:
-				res = ""
+				result = ""
 				break
 			}
 		}
 	}
 
-	if res != "" {
-		fmt.Fprint(w, res)
+	// Check results is not blank
+	if result != "" {
+		// Set header content-type
+		w.Header().Set("Content-Type", "text/plain")
+
+		// Print result
+		fmt.Fprint(w, result)
 	} else {
+		// Display 404 not found
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 	}
 }
 
 func main() {
+	version := "1.0"
+	info := "Service for IGCType tracks"
 	lastId = 0
 
-	apiInfo = APIInfo{Uptime: "", Info:"Service for IGCType tracks.", Version:"v1"}
+	apiInfo = APIInfo{Uptime: "", Info: info, Version: version}
 
 	router := mux.NewRouter()
-	router.HandleFunc("/igcinfo/api", GetAPI).Methods("GET")
-	router.HandleFunc("/igcinfo/api/igc", GetIGC).Methods("GET")
-	router.HandleFunc("/igcinfo/api/igc", PostIGC).Methods("POST")
-	router.HandleFunc("/igcinfo/api/igc/{id}", GetID).Methods("GET")
-	router.HandleFunc("/igcinfo/api/igc/{id}/{field}", GetIDField).Methods("GET")
+	subrouter := router.PathPrefix("/igcinfo").Subrouter()
+	subrouter.HandleFunc("/api", GetAPI).Methods("GET")
+	subrouter.HandleFunc("/api/igc", GetIGC).Methods("GET")
+	subrouter.HandleFunc("/api/igc", PostIGC).Methods("POST")
+	subrouter.HandleFunc("/api/igc/{id}", GetID).Methods("GET")
+	subrouter.HandleFunc("/api/igc/{id}/{field}", GetIDField).Methods("GET")
 
-	http.Handle("/", router)
+	http.Handle("/", subrouter)
 	appengine.Main()
 }
