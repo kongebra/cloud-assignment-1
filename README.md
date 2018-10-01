@@ -10,9 +10,9 @@ Used to retrieve meta-data about the API
 ##### Result
 ```json
 {
-  "uptime": <uptime>,
-  "info": <infomraation>,
-  "version": <version>
+  "uptime": "<uptime>",
+  "info": "<information>",
+  "version": "<version>"
 }
 ```
 
@@ -22,9 +22,9 @@ Retrieve IDs of all entries
 ##### Result
 ```json
 [
-  <id0>,
-  <id1>,
-  <idn>
+  "<id0>",
+  "<id1>",
+  "<id1>"
 ]
 ```
 
@@ -34,11 +34,11 @@ Retrieve data about an entry, based on it's ID
 ##### Result
 ```json
 {
-  "h_date": <h_date>,
-  "pilot": <pilot>,
-  "glider": <glider>,
-  "glider_id": <glider_id>,
-  "track_length": <track_length>
+  "h_date": "<h_date>",
+  "pilot": "<pilot>",
+  "glider": "<glider>",
+  "glider_id": "<glider_id>",
+  "track_length": "<track_length>"
 }
 ```
 
@@ -56,12 +56,12 @@ Insert a new entry with an URL to a `.igc` file
 ##### Body
 ```json
 {
-  "url": <url>
+  "url": "<url>"
 }
 ```
 ##### Response
 ```json
 {
-  "id": <id>
+  "id": "<id>"
 }
 ```
